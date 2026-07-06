@@ -22,8 +22,11 @@
             margin: 0;
             padding: 20px;
         }
-        h2, h3 { text-align: center; font-weight: 500; }
-        h2 { margin-bottom: 20px; }
+        .header-container { display: flex; justify-content: space-between; align-items: center; max-width: 1000px; margin: 0 auto 20px auto; }
+        h2, h3 { text-align: center; font-weight: 500; margin: 0; }
+
+        .btn-settings { background: #444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-settings:hover { background: #555; }
 
         .groups {
             display: grid;
@@ -46,31 +49,15 @@
         }
 
         .group-title-tile {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            font-weight: 600;
-            font-size: 1.1em;
-            color: var(--primary);
-            background: var(--tile-bg); /* Matched to tiles */
-            border: 2px dashed #444;
-            border-radius: 10px;
-            padding: 10px;
+            display: flex; align-items: center; justify-content: center; text-align: center;
+            font-weight: 600; font-size: 1.1em; color: var(--primary); background: var(--tile-bg);
+            border: 2px dashed #444; border-radius: 10px; padding: 10px;
         }
 
         .switch-tile {
-            background: var(--tile-bg);
-            color: var(--tile-text);
-            border-radius: 10px;
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: space-evenly;
-            text-align: center;
-            border: 1px solid #444;
-            box-shadow: inset 0 2px 5px rgba(255,255,255,0.15), 0 3px 6px rgba(0,0,0,0.4);
+            background: var(--tile-bg); color: var(--tile-text); border-radius: 10px; padding: 12px;
+            display: flex; flex-direction: column; align-items: center; justify-content: space-evenly;
+            text-align: center; border: 1px solid #444; box-shadow: inset 0 2px 5px rgba(255,255,255,0.15), 0 3px 6px rgba(0,0,0,0.4);
         }
         
         .switch-name { font-weight: 600; font-size: 0.9em; margin-bottom: 4px;}
@@ -111,10 +98,24 @@
         .btn-toggle.active { background: var(--primary); color: #000; }
         .btn-toggle.inactive { background: #555; color: #fff; }
         .btn-del { cursor: pointer; padding: 5px 10px; border: none; border-radius: 4px; font-weight: bold; background: var(--error); color: white; margin-left: 5px;}
+
+        /* Modal for Settings */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.8); }
+        .modal-content { background-color: var(--surface); margin: 5% auto; padding: 20px; border-radius: 12px; width: 90%; max-width: 500px; color: white;}
+        .close-modal { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close-modal:hover { color: white; }
+        .settings-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        .settings-row input { flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; }
+        .settings-row span { width: 90px; font-size: 0.8em; color: var(--text-muted); }
+        .settings-row button { padding: 8px 12px; background: var(--primary); color: black; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <h2><span class="status-dot on"></span> System Dashboard</h2>
+    <div class="header-container">
+        <h2><span class="status-dot on"></span> System Dashboard</h2>
+        <button class="btn-settings" onclick="openSettings()">⚙️ Settings</button>
+    </div>
+
     <div id="loader">Scanning hardware mesh...</div>
     <div class="groups" id="switch-container"></div>
     <div class="last-updated" id="last-updated"></div>
@@ -138,23 +139,36 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeSettings()">&times;</span>
+            <h2>Rename Switches</h2>
+            <div id="settings-list"></div>
+        </div>
+    </div>
+
     <script>
         const container = document.getElementById('switch-container');
         const loader = document.getElementById('loader');
         const lastUpdated = document.getElementById('last-updated');
         const schedDeviceSelect = document.getElementById('sched-device');
         const scheduleList = document.getElementById('schedule-list');
+        const settingsList = document.getElementById('settings-list');
+        const settingsModal = document.getElementById('settingsModal');
 
         const REFRESH_INTERVAL_MS = 10 * 1000;   
         const TOGGLE_LOCK_MS = 4000;              
         const lockedDevices = new Set();
         let skeletonBuilt = false;
         let knownDevicesMap = {};
+        let rawGroupsData = [];
 
         async function buildLayout() {
             const response = await fetch('/api/groups');
             if (!response.ok) throw new Error('Could not load switch groups');
             const data = await response.json();
+            rawGroupsData = data.groups;
 
             container.innerHTML = '';
             schedDeviceSelect.innerHTML = '';
@@ -168,12 +182,10 @@
                 titleTile.innerHTML = group.name.replace(' Switches', '<br>Switches');
                 groupBox.appendChild(titleTile);
 
-                // Anti-Clockwise Custom Sorting Logic (Top-Right: 03, Bottom-Left: 01, Bottom-Right: 02)
                 const orderedNames = ["03", "01", "02"]; 
                 const sortedSwitches = [...group.switches].sort((a, b) => {
                     let indexA = orderedNames.findIndex(suffix => a.name.endsWith(suffix));
                     let indexB = orderedNames.findIndex(suffix => b.name.endsWith(suffix));
-                    // If suffix isn't found, keep original order
                     return (indexA === -1 ? 99 : indexA) - (indexB === -1 ? 99 : indexB);
                 });
 
@@ -182,10 +194,8 @@
                     const displayName = sw.name;
                     knownDevicesMap[deviceId] = displayName;
 
-                    // Populate Dropdown for scheduler
                     const option = document.createElement('option');
-                    option.value = deviceId;
-                    option.text = displayName;
+                    option.value = deviceId; option.text = displayName;
                     schedDeviceSelect.appendChild(option);
 
                     const tile = document.createElement('div');
@@ -218,12 +228,8 @@
                 applyStates(data.scan_results);
                 lastUpdated.innerText = 'Last updated: ' + new Date().toLocaleTimeString();
             } catch (error) {
-                console.error('Scan failed:', error);
-                if (isInitialLoad || !skeletonBuilt) {
-                    loader.innerHTML = 'Gateway unavailable. Please check the hardware connection.';
-                } else {
-                    lastUpdated.innerText = 'Last refresh failed — showing last known state';
-                }
+                if (isInitialLoad || !skeletonBuilt) loader.innerHTML = 'Gateway unavailable.';
+                else lastUpdated.innerText = 'Last refresh failed — showing last known state';
             }
         }
 
@@ -245,7 +251,7 @@
                 } else {
                     const dotClass = data.state === 'ON' ? 'on' : (data.state === 'OFF' ? 'off' : '');
                     stateText.innerText = data.state;
-                    stateText.className = ''; // reset classes
+                    stateText.className = ''; 
                     dot.className = `status-dot ${dotClass}`;
                     toggle.disabled = false;
                     toggle.checked = (data.state === 'ON');
@@ -288,12 +294,10 @@
             try {
                 await fetch(`/api/switches/all/${action}`, { method: 'POST' });
                 setTimeout(() => refreshStates(false), 2500); 
-            } catch (e) {
-                alert("Failed to execute global command.");
-            }
+            } catch (e) { alert("Failed to execute global command."); }
         }
 
-        // --- Scheduler UI Logic ---
+        // --- Scheduler ---
         async function loadSchedules() {
             try {
                 const res = await fetch('/api/schedules');
@@ -319,36 +323,51 @@
         async function addSchedule() {
             const timeVal = document.getElementById('sched-time').value;
             if(!timeVal) return alert("Please select a time.");
-            
-            const payload = {
-                device_id: schedDeviceSelect.value,
-                device_name: knownDevicesMap[schedDeviceSelect.value],
-                action: document.getElementById('sched-action').value,
-                time: timeVal
-            };
+            const payload = { device_id: schedDeviceSelect.value, device_name: knownDevicesMap[schedDeviceSelect.value], action: document.getElementById('sched-action').value, time: timeVal };
+            await fetch('/api/schedules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            loadSchedules();
+        }
 
-            await fetch('/api/schedules', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+        async function toggleScheduleState(id) { await fetch(`/api/schedules/${id}/toggle`, { method: 'POST' }); loadSchedules(); }
+        async function deleteSchedule(id) { if(!confirm("Delete this scheduled task?")) return; await fetch(`/api/schedules/${id}`, { method: 'DELETE' }); loadSchedules(); }
+
+        // --- Settings / Rename Logic ---
+        function openSettings() {
+            settingsList.innerHTML = '';
+            rawGroupsData.forEach(group => {
+                group.switches.forEach(sw => {
+                    const row = document.createElement('div');
+                    row.className = 'settings-row';
+                    row.innerHTML = `
+                        <span>ID: ${sw.device_id.slice(-4)}</span>
+                        <input type="text" id="rename-${sw.device_id}" value="${sw.name}" />
+                        <button onclick="saveRename('${sw.device_id}')">Save</button>
+                    `;
+                    settingsList.appendChild(row);
+                });
             });
-            loadSchedules();
+            settingsModal.style.display = "block";
         }
 
-        async function toggleScheduleState(id) {
-            await fetch(`/api/schedules/${id}/toggle`, { method: 'POST' });
-            loadSchedules();
-        }
+        function closeSettings() { settingsModal.style.display = "none"; }
 
-        async function deleteSchedule(id) {
-            if(!confirm("Delete this scheduled task?")) return;
-            await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
-            loadSchedules();
+        async function saveRename(deviceId) {
+            const newName = document.getElementById(`rename-${deviceId}`).value;
+            try {
+                const res = await fetch('/api/devices/rename', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ device_id: deviceId, name: newName })
+                });
+                if(res.ok) {
+                    alert('Saved! Reloading layout...');
+                    buildLayout(); // Reload to reflect new names
+                } else { alert('Failed to save'); }
+            } catch (e) { alert('Error saving name'); }
         }
 
         async function init() {
-            try { await buildLayout(); } 
-            catch (error) { loader.innerHTML = 'Could not load layout.'; return; }
+            try { await buildLayout(); } catch (error) { loader.innerHTML = 'Could not load layout.'; return; }
             await refreshStates(true);
             await loadSchedules();
             setInterval(() => refreshStates(false), REFRESH_INTERVAL_MS);
