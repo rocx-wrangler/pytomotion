@@ -1,0 +1,34 @@
+{
+  "groups": {
+    "Sofa Area": {
+      "01": { "device_id": "770645501", "name": "Sofa Hall Mid" },
+      "02": { "device_id": "770645502", "name": "Sofa Hall End" },
+      "03": { "device_id": "770645503", "name": "Sofa Fan" }
+    },
+    "Kids Bedroom Switches": {
+      "01": { "device_id": "770880801", "name": "CBR White Light" },
+      "02": { "device_id": "770880802", "name": "CBR Warm White Light" },
+      "03": { "device_id": "770880803", "name": "CBR Fan" }
+    },
+    "Pooja Switches": {
+      "01": { "device_id": "770887901", "name": "Pooja Light Hall End" },
+      "02": { "device_id": "770887902", "name": "Pooja Light Mid Hall" },
+      "03": { "device_id": "770887903", "name": "Pooja Fan" }
+    },
+    "Dining Hall Area": {
+      "01": { "device_id": "770889001", "name": "Dining Double Lights" },
+      "02": { "device_id": "770889002", "name": "Dining Single Light" },
+      "03": { "device_id": "770889003", "name": "Dining Chandelier" }
+    },
+    "Guest Bedroom Switches": {
+      "01": { "device_id": "770889401", "name": "GBR White Light" },
+      "02": { "device_id": "770889402", "name": "GBR Warm White Light" },
+      "03": { "device_id": "770889403", "name": "GBR Fan" }
+    },
+    "Master Bedroom Switches": {
+      "01": { "device_id": "770892501", "name": "MBR Right Light" },
+      "02": { "device_id": "770892502", "name": "MBR Center Light" },
+      "03": { "device_id": "770892503", "name": "MBR Fan" }
+    }
+  }
+}

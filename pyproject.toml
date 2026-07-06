@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pytomotion-gateway"
+description = "IoT Gateway for serial device management"
+requires-python = ">=3.5"
+license = {text = "MIT"}
+authors = [{name = "rocx-wrangler"}]

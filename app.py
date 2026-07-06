@@ -1,0 +1,305 @@
+import os
+import glob
+import threading
+import time
+import json
+import serial
+import re
+import queue
+import logging
+from logging.handlers import TimedRotatingFileHandler
+import uuid
+from flask import Flask, jsonify, request
+from apscheduler.schedulers.background import BackgroundScheduler
+
+# --- Configuration ---
+SERIAL_PORT = os.getenv("SERIAL_PORT", "/dev/ttyACM0")
+BAUD_RATE = int(os.getenv("BAUD_RATE", "115200"))
+STATE_FILE = "state.json"
+DEVICES_FILE = "devices.json"
+SCHEDULES_FILE = "schedules.json"
+
+# --- Logging Setup (Rolling 10 days) ---
+log_dir = os.path.join(os.getcwd(), "logs")
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+log_path = os.path.join(log_dir, "edomo_gateway.log")
+log_handler = TimedRotatingFileHandler(log_path, when="midnight", interval=1, backupCount=10)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[log_handler, logging.StreamHandler()]
+)
+
+app = Flask(__name__, static_url_path="", static_folder=".")
+
+ser = None
+gateway_error = None
+command_queue = queue.Queue()
+state_lock = threading.Lock()
+pending_commands = {} # Tracks timeouts for unreachable devices
+
+# Initialize Scheduler
+scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+
+# --- 1. State Management ---
+
+def load_state():
+    if not os.path.exists(STATE_FILE): return {}
+    try:
+        with open(STATE_FILE, "r") as f: return json.load(f)
+    except Exception: return {}
+
+def save_state(state_dict):
+    with state_lock:
+        try:
+            with open(STATE_FILE, "w") as f: json.dump(state_dict, f, indent=4)
+        except Exception as e:
+            logging.error("Error saving state: {}".format(e))
+
+def load_devices():
+    if not os.path.exists(DEVICES_FILE): return {"groups": {}}
+    try:
+        with open(DEVICES_FILE, "r") as f: return json.load(f)
+    except Exception as e:
+        logging.error("Error loading devices: {}".format(e))
+        return {"groups": {}}
+
+def get_known_switches():
+    devices_data = load_devices()
+    return [sw.get("device_id") for grp in devices_data.get("groups", {}).values() for sw in grp.values()]
+
+def update_device_state(device_id, status):
+    logging.info("State Update: Switch {} is now {}".format(device_id, status))
+    state = load_state()
+    state[device_id] = {"what": "1" if status == "ON" else "0"}
+    save_state(state)
+    if device_id in pending_commands:
+        del pending_commands[device_id]
+
+# --- 2. Schedule Management ---
+
+def load_schedules():
+    if not os.path.exists(SCHEDULES_FILE): return []
+    try:
+        with open(SCHEDULES_FILE, "r") as f: return json.load(f)
+    except Exception: return []
+
+def save_schedules(schedules):
+    try:
+        with open(SCHEDULES_FILE, "w") as f: json.dump(schedules, f, indent=4)
+    except Exception as e:
+        logging.error("Error saving schedules: {}".format(e))
+
+def execute_schedule(device_id, action):
+    logging.info("Executing Scheduled Task: {} -> {}".format(device_id, action))
+    what = "1" if action.upper() == "ON" else "0"
+    command_queue.put("*1*{what}*{device_id}#9##".format(what=what, device_id=device_id))
+    command_queue.put("*#1*{device_id}##".format(device_id=device_id))
+
+def reload_scheduler():
+    scheduler.remove_all_jobs()
+    schedules = load_schedules()
+    for sched in schedules:
+        if sched.get("active", False):
+            time_parts = sched["time"].split(":")
+            # Simple daily cron. Can be expanded to specific days if needed.
+            scheduler.add_job(
+                execute_schedule, 
+                'cron', 
+                hour=int(time_parts[0]), 
+                minute=int(time_parts[1]), 
+                args=[sched["device_id"], sched["action"]],
+                id=sched["id"]
+            )
+    logging.info("Scheduler reloaded.")
+
+# --- 3. Serial Communication ---
+
+def init_serial():
+    global ser, gateway_error, SERIAL_PORT
+    if ser and ser.is_open: return
+
+    ports = [os.getenv("SERIAL_PORT")] + ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/ttyAMA0"] + glob.glob("/dev/serial/by-id/*")
+    for port in filter(None, ports):
+        try:
+            ser = serial.Serial(port, BAUD_RATE, timeout=0.1, write_timeout=1.0)
+            ser.reset_input_buffer()
+            SERIAL_PORT = port
+            gateway_error = None
+            logging.info("Successfully connected to {}".format(SERIAL_PORT))
+            return
+        except Exception: pass
+            
+    gateway_error = "No serial port found"
+    logging.error("Gateway unavailable: {}".format(gateway_error))
+
+def parse_openwebnet(frame):
+    match = re.search(r'\*(?:1|2)\*([01])\*(\d+)(?:#\d+)?##', frame)
+    if match:
+        what, device_id = match.groups()
+        update_device_state(device_id, "ON" if what == "1" else "OFF")
+
+def drop_connection(reason):
+    global ser, gateway_error
+    logging.error("Dropping connection: {reason}".format(reason=reason))
+    if ser:
+        try:
+            ser.close()
+        except Exception:
+            pass
+    ser = None
+    gateway_error = str(reason)
+
+def serial_reader_loop():
+    global ser
+    buffer_str = ""
+    while True:
+        if ser and ser.is_open:
+            try:
+                waiting = ser.in_waiting
+                if waiting > 0:
+                    buffer_str += ser.read(waiting).decode("ascii", errors="ignore")
+                    while "##" in buffer_str:
+                        frame, buffer_str = buffer_str.split("##", 1)
+                        frame = frame.strip() + "##"
+                        if "*#*0##" not in frame and "*#*1##" not in frame:
+                            parse_openwebnet(frame)
+            except Exception as e:
+                # FIX: Actively drop the broken connection
+                drop_connection("Read error: " + str(e))
+                time.sleep(1)
+        else: 
+            init_serial() # This will now successfully reconnect
+            time.sleep(1)
+        time.sleep(0.01)
+
+def serial_writer_loop():
+    global ser
+    while True:
+        cmd = command_queue.get()
+        if ser and ser.is_open:
+            try:
+                ser.write(cmd.encode("ascii"))
+                ser.flush()
+                logging.info("Sent: {cmd}".format(cmd=cmd))
+            except Exception as e:
+                logging.error("Failed to write {cmd}: {e}".format(cmd=cmd, e=e))
+                # FIX: Actively drop the broken connection
+                drop_connection("Write error: " + str(e))
+        else:
+            logging.warning("Skipped {cmd}, port closed.".format(cmd=cmd))
+            
+        time.sleep(1.0)
+        command_queue.task_done()
+
+# --- 4. Flask API Endpoints ---
+
+@app.route("/api/groups", methods=["GET"])
+def get_groups():
+    devices_data = load_devices()
+    groups_list = [{"name": name, "switches": [sw for _, sw in sorted(switches.items())]} 
+                   for name, switches in devices_data.get("groups", {}).items()]
+    return jsonify({"groups": groups_list})
+
+@app.route("/api/switch/<device_id>/<action>", methods=["POST"])
+def toggle_switch(device_id, action):
+    if action.lower() not in ["on", "off"]: return jsonify({"error": "Invalid action"}), 400
+    what = "1" if action.lower() == "on" else "0"
+    
+    command_queue.put("*1*{what}*{device_id}#9##".format(what=what, device_id=device_id))
+    command_queue.put("*#1*{device_id}##".format(device_id=device_id))
+    
+    pending_commands[device_id] = time.time()
+    return jsonify({"device_id": device_id, "status": "queued"}), 200
+
+@app.route("/api/switches/all/<action>", methods=["POST"])
+def toggle_all(action):
+    if action.lower() not in ["on", "off"]: return jsonify({"error": "Invalid action"}), 400
+    what = "1" if action.lower() == "on" else "0"
+    for device_id in get_known_switches():
+        command_queue.put("*1*{what}*{device_id}#9##".format(what=what, device_id=device_id))
+        command_queue.put("*#1*{device_id}##".format(device_id=device_id))
+        pending_commands[device_id] = time.time()
+    return jsonify({"status": "queued_all"}), 200
+
+@app.route("/api/switches/scan", methods=["GET"])
+def scan_switches():
+    state_data = load_state()
+    results = {}
+    current_time = time.time()
+    
+    for device_id in get_known_switches():
+        # Handle Timeout/Unreachable Check (5 seconds)
+        if device_id in pending_commands and (current_time - pending_commands[device_id] > 5.0):
+            state_text = "UNREACHABLE"
+            # Remove so we don't permanently stick on unreachable if it later recovers
+            del pending_commands[device_id]
+        else:
+            what = state_data.get(device_id, {}).get("what", "-1")
+            state_text = "ON" if what == "1" else "OFF" if what == "0" else "UNKNOWN"
+            
+        results[device_id] = {"state": state_text}
+
+    return jsonify({"scan_results": results})
+
+@app.route("/api/schedules", methods=["GET", "POST"])
+def manage_schedules():
+    schedules = load_schedules()
+    if request.method == "POST":
+        data = request.json
+        new_job = {
+            "id": str(uuid.uuid4()),
+            "device_id": data["device_id"],
+            "device_name": data.get("device_name", "Unknown Device"),
+            "action": data["action"],
+            "time": data["time"],
+            "active": True
+        }
+        schedules.append(new_job)
+        save_schedules(schedules)
+        reload_scheduler()
+        return jsonify(new_job), 201
+    return jsonify(schedules)
+
+@app.route("/api/schedules/<job_id>/toggle", methods=["POST"])
+def toggle_schedule(job_id):
+    schedules = load_schedules()
+    for sched in schedules:
+        if sched["id"] == job_id:
+            sched["active"] = not sched["active"]
+            save_schedules(schedules)
+            reload_scheduler()
+            return jsonify({"status": "success", "active": sched["active"]})
+    return jsonify({"error": "Job not found"}), 404
+
+@app.route("/api/schedules/<job_id>", methods=["DELETE"])
+def delete_schedule(job_id):
+    schedules = [s for s in load_schedules() if s["id"] != job_id]
+    save_schedules(schedules)
+    reload_scheduler()
+    return jsonify({"status": "deleted"}), 200
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    return jsonify({
+        "status": "online" if (ser and ser.is_open) else "degraded",
+        "error": gateway_error
+    })
+
+@app.route("/", methods=["GET"])
+def index():
+    return app.send_static_file("index.html")
+
+if __name__ == "__main__":
+    if not os.path.exists(STATE_FILE): save_state({})
+    if not os.path.exists(SCHEDULES_FILE): save_schedules([])
+    
+    init_serial()
+    scheduler.start()
+    reload_scheduler()
+    
+    threading.Thread(target=serial_reader_loop, daemon=True).start()
+    threading.Thread(target=serial_writer_loop, daemon=True).start()
+    
+    app.run(host="0.0.0.0", port=3767, threaded=True, use_reloader=False)

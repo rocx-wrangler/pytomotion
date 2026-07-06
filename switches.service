@@ -1,0 +1,15 @@
+[Unit]
+Description=Edomotics Switch Gateway
+After=systemd-udevd.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pytomotion
+Environment=SERIAL_PORT=/dev/serial/by-id/usb-Legrand_OpenWebNet_ZigBee_Gateway_16A075000074040-if00
+ExecStart=/usr/bin/python3 /home/pytomotion/app.py
+Restart=always
+RestartSec=30
+User=root
+
+[Install]
+WantedBy=multi-user.target
