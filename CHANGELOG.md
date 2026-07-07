@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.1] - 2026-07-07
+
+- Updated installer.sh script
+- Created directory for backend and frontend code
+
 ## [1.1.0] - 2026-07-06
 
 - Added installer.sh script

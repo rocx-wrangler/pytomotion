@@ -43,7 +43,7 @@ After=systemd-udevd.service
 Type=simple
 WorkingDirectory=/home/pytomotion
 Environment=SERIAL_PORT=/dev/serial/by-id/usb-Legrand_OpenWebNet_ZigBee_Gateway_16A075000074040-if00
-ExecStart=/usr/bin/python3 /home/pytomotion/app.py
+ExecStart=/usr/bin/python3 /home/pytomotion/backend/app.py
 Restart=always
 RestartSec=30
 User=root
@@ -107,6 +107,24 @@ ls -la /dev/serial/by-id/
 **Restart systemd:**
 ```bash
 sudo systemctl daemon-reload
+```
+
+### Project Structure
+
+```
+pytomotion/
+├── backend/
+│   └── app.py              # Main application (protected from web access)
+├── public/
+│   └── index.html          # Web UI (only static files served)
+├── data/
+│   ├── state.json          # Device states
+│   ├── devices.json        # Device configuration
+│   └── schedules.json      # Scheduled tasks
+├── logs/
+│   └── edomo_gateway.log   # Application logs (10-day rotation)
+├── tests/                  # Unit tests
+└── requirements.txt        # Dependencies
 ```
 
 ### API Access

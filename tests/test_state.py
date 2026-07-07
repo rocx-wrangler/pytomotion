@@ -1,9 +1,7 @@
 """Test state management functions"""
 import os
-import json
-import tempfile
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend'))
 
 import app
 

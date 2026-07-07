@@ -17,7 +17,7 @@ git clone https://github.com/rocx-wrangler/pytomotion.git
 cd pytomotion
 pip install -r requirements.txt
 export SERIAL_PORT=/dev/ttyACM0
-python app.py
+python backend/app.py
 ```
 
 ## Configuration
