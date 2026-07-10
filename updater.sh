@@ -29,7 +29,7 @@ fi
 
 # Configure GIT_SSH_COMMAND if deploy key exists
 if [ -f "$DEPLOY_KEY" ]; then
-    export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o StrictHostKeyChecking=accept-new"
+    export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o StrictHostKeyChecking=no"
     log "Using deploy key: $DEPLOY_KEY"
 else
     log "No specific deploy key found at $DEPLOY_KEY, using default SSH keys."
