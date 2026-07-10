@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.2] - 2026-07-10
+
+- Added files for android app - apk creation not done.
+- Fixed switch display order on UI
+- State is not flushed to disk after every action, rather periodically
+
 ## [1.1.1] - 2026-07-07
 
 - Updated installer.sh script

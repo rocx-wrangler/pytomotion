@@ -9,6 +9,7 @@ import queue
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import uuid
+import atexit
 from flask import Flask, jsonify, request
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -51,22 +52,33 @@ gateway_error = None
 command_queue = queue.Queue()
 state_lock = threading.Lock()
 pending_commands = {} # Tracks timeouts for unreachable devices
+in_memory_state = {} # RAM cache for switch states
 
 # Initialize Scheduler
 scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
 
 # --- 1. State Management ---
 
-def load_state():
-    if not os.path.exists(STATE_FILE): return {}
-    try:
-        with open(STATE_FILE, "r") as f: return json.load(f)
-    except Exception: return {}
+def init_state():
+    """Load the state from disk into RAM at startup."""
+    global in_memory_state
+    if not os.path.exists(STATE_FILE): 
+        in_memory_state = {}
+        flush_state_to_disk()
+    else:
+        try:
+            with open(STATE_FILE, "r") as f: 
+                in_memory_state = json.load(f)
+        except Exception: 
+            in_memory_state = {}
 
-def save_state(state_dict):
+def flush_state_to_disk():
+    """Dump the RAM state cache down to the SD card."""
     with state_lock:
         try:
-            with open(STATE_FILE, "w") as f: json.dump(state_dict, f, indent=4)
+            with open(STATE_FILE, "w") as f: 
+                json.dump(in_memory_state, f, indent=4)
+            logging.info("State successfully flushed to disk.")
         except Exception as e:
             logging.error("Error saving state: {}".format(e))
 
@@ -92,9 +104,8 @@ def get_known_switches():
 
 def update_device_state(device_id, status):
     logging.info("State Update: Switch {} is now {}".format(device_id, status))
-    state = load_state()
-    state[device_id] = {"what": "1" if status == "ON" else "0"}
-    save_state(state)
+    # Directly update RAM cache ONLY, bypassing SD card disk write
+    in_memory_state[device_id] = {"what": "1" if status == "ON" else "0"}
     if device_id in pending_commands:
         del pending_commands[device_id]
 
@@ -124,7 +135,6 @@ def reload_scheduler():
     for sched in schedules:
         if sched.get("active", False):
             time_parts = sched["time"].split(":")
-            # Simple daily cron. Can be expanded to specific days if needed.
             scheduler.add_job(
                 execute_schedule, 
                 'cron', 
@@ -268,7 +278,6 @@ def toggle_all(action):
 
 @app.route("/api/switches/scan", methods=["GET"])
 def scan_switches():
-    state_data = load_state()
     results = {}
     current_time = time.time()
     
@@ -277,7 +286,8 @@ def scan_switches():
             state_text = "UNREACHABLE"
             del pending_commands[device_id]
         else:
-            what = state_data.get(device_id, {}).get("what", "-1")
+            # Read instantly from RAM cache instead of opening a file
+            what = in_memory_state.get(device_id, {}).get("what", "-1")
             state_text = "ON" if what == "1" else "OFF" if what == "0" else "UNKNOWN"
             
         results[device_id] = {"state": state_text}
@@ -333,12 +343,18 @@ def index():
     return app.send_static_file("index.html")
 
 if __name__ == "__main__":
-    if not os.path.exists(STATE_FILE): save_state({})
+    init_state()
     if not os.path.exists(SCHEDULES_FILE): save_schedules([])
     
     init_serial()
+    
+    # Run the flush_state_to_disk function automatically every 10 minutes
+    scheduler.add_job(flush_state_to_disk, 'interval', minutes=10, id='state_flusher')
     scheduler.start()
     reload_scheduler()
+    
+    # Register graceful exit handler to save RAM buffer to SD card on shutdown
+    atexit.register(flush_state_to_disk)
     
     threading.Thread(target=serial_reader_loop, daemon=True).start()
     threading.Thread(target=serial_writer_loop, daemon=True).start()
