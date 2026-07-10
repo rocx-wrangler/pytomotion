@@ -90,6 +90,60 @@ sudo systemctl stop switches.service
 ```bash
 sudo systemctl disable switches.service
 ```
+### Auto-Updater Installation
+
+To keep the Orange Pi devices up to date automatically, a weekly auto-updater can be configured using a systemd timer.
+
+1. **Deploy Key Setup**:
+   - Generate an SSH key pair (without a passphrase):
+     ```bash
+     ssh-keygen -t ed25519 -f /home/pytomotion/.ssh/deploy_key -N ""
+     ```
+   - Change ownership of the `.ssh` folder and key files to the user running the app:
+     ```bash
+     chmod 700 /home/pytomotion/.ssh
+     chmod 600 /home/pytomotion/.ssh/deploy_key
+     ```
+   - Copy the public key content:
+     ```bash
+     cat /home/pytomotion/.ssh/deploy_key.pub
+     ```
+   - Go to your private GitHub repository **Settings > Deploy Keys**, click **Add deploy key**, paste the public key, and name it (e.g., `Orange Pi Shared Deploy Key`). Ensure it has read-only access.
+   - Configure Git to use the SSH remote instead of HTTPS:
+     ```bash
+     git remote set-url origin git@github.com:rocx-wrangler/pytomotion.git
+     ```
+
+2. **Install Service & Timer**:
+   - Copy the service and timer files to the systemd directory:
+     ```bash
+     sudo cp pytomotion-updater.service /etc/systemd/system/
+     sudo cp pytomotion-updater.timer /etc/systemd/system/
+     ```
+   - Make the updater script executable:
+     ```bash
+     chmod +x /home/pytomotion/updater.sh
+     ```
+   - Reload systemd and enable the timer:
+     ```bash
+     sudo systemctl daemon-reload
+     sudo systemctl enable pytomotion-updater.timer
+     sudo systemctl start pytomotion-updater.timer
+     ```
+
+3. **Check Updater Status & Logs**:
+   - Check timer schedule and next runs:
+     ```bash
+     systemctl list-timers --all | grep pytomotion
+     ```
+   - View updater execution logs:
+     ```bash
+     tail -f /home/pytomotion/logs/updater.log
+     ```
+   - Or view systemd journal log:
+     ```bash
+     sudo journalctl -u pytomotion-updater.service
+     ```
 
 ### Troubleshooting
 

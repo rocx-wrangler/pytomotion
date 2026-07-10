@@ -28,14 +28,16 @@ python backend/app.py
 
 ## Deployment on OrangePi
 
-### Systemd Service Setup
+For detailed deployment guides and auto-updater settings, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-1. Create service file:
+### Quick Systemd Service Setup
+
+1. Copy or create the service file:
 ```bash
-sudo vi /etc/systemd/system/switches.service
+sudo cp switches.service /etc/systemd/system/
 ```
 
-2. Add configuration:
+2. Standard service configuration:
 ```ini
 [Unit]
 Description=Edomotics Switch Gateway
@@ -45,7 +47,7 @@ After=systemd-udevd.service
 Type=simple
 WorkingDirectory=/home/pytomotion
 Environment=SERIAL_PORT=/dev/serial/by-id/usb-Legrand_OpenWebNet_ZigBee_Gateway_16A075000074040-if00
-ExecStart=/usr/bin/python3 /home/pytomotion/app.py
+ExecStart=/usr/bin/python3 /home/pytomotion/backend/app.py
 Restart=always
 RestartSec=30
 User=root
@@ -61,16 +63,10 @@ sudo systemctl enable switches.service
 sudo systemctl start switches.service
 ```
 
-4. Check status:
-```bash
-sudo systemctl status switches.service
-```
-
-5. View logs:
-```bash
-sudo journalctl -u switches.service -f
-```
+### Auto-Updates
+The gateway includes a weekly git-based auto-updater setup using a systemd timer (configured in `pytomotion-updater.timer`). See [DEPLOYMENT.md](DEPLOYMENT.md) for full instructions on configuring SSH Deploy Keys and installing the auto-updater.
 
 ## Logging
 
-Logs written to `logs/` directory with 10-day rotation.
+Logs are written to the `logs/` directory with 10-day rotation and daily roll.
+

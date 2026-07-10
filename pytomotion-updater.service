@@ -1,0 +1,11 @@
+[Unit]
+Description=Pytomotion Gateway Auto-Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/pytomotion/updater.sh
+WorkingDirectory=/home/pytomotion
+StandardOutput=journal
+StandardError=journal

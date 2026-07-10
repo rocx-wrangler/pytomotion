@@ -42,6 +42,9 @@ pytomotion/
 ├── pyproject.toml               # Build configuration
 │
 ├── switches.service             # Systemd service file (OrangePi)
+├── pytomotion-updater.service   # Systemd service wrapper for auto-updater
+├── pytomotion-updater.timer     # Systemd timer file for weekly updates (Sun 2AM)
+├── updater.sh                   # Git-based weekly auto-updater script
 ├── run.sh                       # Linux startup script
 ├── run.bat                      # Windows startup script
 ├── run_tests.sh                 # Linux test runner
@@ -50,9 +53,6 @@ pytomotion/
 ├── .env.example                 # Environment variables template
 ├── .gitignore                   # Git ignore rules
 ├── .gitattributes               # Line ending normalization
-│
-├── sftp.json                    # SFTP configuration (legacy)
-└── devices.json                 # (DEPRECATED - moved to data/)
 ```
 
 ## Why This Structure?
@@ -69,36 +69,6 @@ pytomotion/
 - ✅ Logs in dedicated `logs/` directory (daily rotation, 10-day retention)
 - ✅ Clean separation of concerns
 
-### Migration from Old Structure
-
-If updating from the old structure:
-
-1. **Old location** → **New location**
-   - `app.py` → `backend/app.py`
-   - `index.html` → `public/index.html`
-   - `state.json` → `data/state.json`
-   - `devices.json` → `data/devices.json`
-   - `schedules.json` → `data/schedules.json`
-   - `edomo_gateway.log*` → `logs/edomo_gateway.log*`
-
-2. **File paths are handled automatically** by `backend/app.py`:
-   - Calculates `BASE_DIR` based on backend location
-   - Creates required directories if missing
-   - Manages all file operations with new paths
-
-3. **Update systemd service**:
-   ```bash
-   sudo systemctl stop switches.service
-   sudo cp switches.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl start switches.service
-   ```
-
-4. **Verify new structure**:
-   ```bash
-   cd /home/pytomotion
-   ls -la backend/
-   ls -la public/
-   ls -la data/
-   ls -la logs/
-   ```
+### Auto-Updater System
+- 🔄 **`updater.sh`**: Fetches changes, validates python file syntax, resets to the remote head, cleans untracked files (preserving customer config in `data/`), and restarts/verifies the service.
+- ⏰ **`pytomotion-updater.timer`**: Schedules the update checks weekly on Sundays at 2:00 AM. It includes staggered delays to spread api traffic, and boot persistence so checks are run immediately upon boot if a scheduled run was missed.

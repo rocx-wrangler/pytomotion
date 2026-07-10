@@ -1,10 +1,17 @@
 # Changelog
 
+## [1.1.3] - 2026-07-10
+
+- Added git-based weekly auto-updater (GitHub Deploy Key, systemd timer, syntax validation).
+- Cleaned up and improved project structure.
+- Updated and improved DEPLOYMENT.md with comprehensive guidance.
+
 ## [1.1.2] - 2026-07-10
 
 - Added files for android app - apk creation not done.
 - Fixed switch display order on UI
 - State is not flushed to disk after every action, rather periodically
+
 
 ## [1.1.1] - 2026-07-07
 

@@ -1,3 +1,3 @@
 #!/bin/bash
 # Run test suite
-python -m pytest tests/ -v --cov=. --cov-report=html
+python3 -m pytest tests/ -v

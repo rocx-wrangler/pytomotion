@@ -6,7 +6,8 @@ echo "======================================"
 # 1. Download and Extract Source
 echo "[1/5] Downloading latest code..."
 # NOTE: If repo is private, add: --header="Authorization: token YOUR_TOKEN"
-wget https://github.com/rocx-wrangler/pytomotion/archive/refs/heads/main.zip -O pytomotion.zip
+wget --header="Authorization: token github_pat_11.." https://api.github.com/repos/rocx-wrangler/pytomotion/zipball/main -O pytomotion.z
+ip
 unzip -o pytomotion.zip
 cd pytomotion-main
 
